@@ -16,8 +16,10 @@ function MovieDetailPage() {
   const [recommendations, setRecommendations] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [reviewComment, setReviewComment] = useState('');
+  const [rating, setRating] = useState(5);
   const [loading, setLoading] = useState(true);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   // Construct full image URL if it's a relative path
   const getImageUrl = (imageUrl) => {
@@ -31,7 +33,7 @@ function MovieDetailPage() {
 
   useEffect(() => {
     fetchMovie();
-  }, [id]);
+  }, [id, user?.id]);
 
   const fetchMovie = async () => {
     try {
@@ -45,6 +47,15 @@ function MovieDetailPage() {
       setMovie(movieResponse.data);
       setRecommendations(recResponse.data);
       setReviews(reviewResponse.data);
+
+      // If current user has already rated, set the rating state to their rating
+      const currentUserId = user?.id;
+      if (currentUserId) {
+        const userReview = reviewResponse.data.find(r => (r.user?._id || r.user)?.toString() === currentUserId.toString());
+        if (userReview && userReview.rating) {
+          setRating(userReview.rating);
+        }
+      }
     } catch (error) {
       toast.error('Failed to fetch movie details');
       navigate('/');
@@ -66,6 +77,7 @@ function MovieDetailPage() {
       const response = await axios.post(`${API_URL}/reviews`, {
         movie: id,
         comment: reviewComment,
+        rating: rating,
       });
 
       setReviews((prevReviews) => [response.data, ...prevReviews]);
@@ -78,14 +90,47 @@ function MovieDetailPage() {
     }
   };
 
+  const handleRatingOnlySubmit = async () => {
+    try {
+      setSubmittingRating(true);
+      const response = await axios.post(`${API_URL}/reviews`, {
+        movie: id,
+        rating: rating,
+      });
+
+      // Update reviews list (either add new or update existing)
+      setReviews((prevReviews) => {
+        const existingIndex = prevReviews.findIndex(r => (r.user?._id || r.user)?.toString() === user.id.toString());
+        if (existingIndex > -1) {
+          const newReviews = [...prevReviews];
+          newReviews[existingIndex] = response.data;
+          return newReviews;
+        }
+        return [response.data, ...prevReviews];
+      });
+
+      toast.success('Rating saved successfully');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to save rating');
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
   if (loading || !movie) {
     return <LoadingState message="Loading movie details..." />;
   }
 
   const fullImageUrl = getImageUrl(movie.imageUrl);
-  const hasUserReview = Boolean(
-    user?.id && reviews.some((review) => review.user?._id === user.id)
-  );
+  
+  // Find the current user's review if it exists
+  const userReview = user?.id && reviews.length > 0 
+    ? reviews.find(review => (review.user?._id || review.user)?.toString() === user.id.toString())
+    : null;
+  
+  const hasRating = Boolean(userReview && userReview.rating);
+  const hasComment = Boolean(userReview && userReview.comment);
+  const hasUserReview = hasRating || hasComment;
 
   return (
     <div style={styles.detailPage}>
@@ -128,6 +173,55 @@ function MovieDetailPage() {
             <span style={styles.infoLabel}>Cast:</span>
             <span style={styles.infoValue}>{movie.cast}</span>
           </div>
+
+          {isAuthenticated && !hasRating && (
+            <div style={{ marginTop: '30px', padding: '15px', border: '2px solid #000', background: '#f9f9f9', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '15px' }}>
+              <label style={{ ...styles.label, marginBottom: 0 }}>Your Rating:</label>
+              <select
+                value={rating}
+                onChange={(e) => setRating(Number(e.target.value))}
+                style={{ ...styles.input, padding: '5px 10px' }}
+              >
+                {[5, 4, 3, 2, 1].map((num) => (
+                  <option key={num} value={num}>
+                    {num} Star{num !== 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleRatingOnlySubmit}
+                disabled={submittingRating}
+                style={{
+                  ...styles.submitButton,
+                  maxWidth: '100px',
+                  padding: '8px 15px',
+                  fontSize: '12px',
+                  opacity: submittingRating ? 0.7 : 1,
+                }}
+              >
+                {submittingRating ? '...' : 'Rate'}
+              </button>
+              <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', flexBasis: '100%', marginTop: '5px' }}>
+                (You can also write a review below)
+              </span>
+            </div>
+          )}
+          {isAuthenticated && hasRating && (
+            <div style={{ marginTop: '30px', padding: '20px', border: '2px solid #000', background: '#e8f5e9', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', marginBottom: '10px' }}>⭐ {userReview.rating} / 5</div>
+              <div style={{ fontWeight: '700' }}>✓ You have rated this movie</div>
+              {!hasComment && (
+                <p style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
+                  Scroll down to add a text review!
+                </p>
+              )}
+            </div>
+          )}
+          {!isAuthenticated && (
+            <div style={{ marginTop: '30px', padding: '15px', border: '2px dashed #000', textAlign: 'center' }}>
+              <Link to="/login" style={{ color: '#000', fontWeight: '700', textDecoration: 'underline' }}>Login to rate this movie</Link>
+            </div>
+          )}
         </div>
       </div>
 
@@ -150,18 +244,15 @@ function MovieDetailPage() {
       <div style={styles.reviewSection}>
         <h2 style={styles.recommendTitle}>Movie Reviews</h2>
 
-        {isAuthenticated && !hasUserReview ? (
-          <form style={styles.form} onSubmit={handleReviewSubmit}>
+        {isAuthenticated && !hasComment && (
+          <form style={{ ...styles.form, marginBottom: '30px' }} onSubmit={handleReviewSubmit}>
             <div style={styles.formGroup}>
               <label style={styles.label}>Write Your Review</label>
               <textarea
                 value={reviewComment}
                 onChange={(e) => setReviewComment(e.target.value)}
                 style={styles.textarea}
-                onFocus={(e) => e.currentTarget.style.boxShadow = styles.inputFocus.boxShadow}
-                onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
-                placeholder="Write your review here"
-                maxLength={1000}
+                placeholder="What did you think of this movie?"
                 required
               />
             </div>
@@ -171,29 +262,18 @@ function MovieDetailPage() {
                 ...styles.submitButton,
                 maxWidth: '220px',
                 opacity: submittingReview ? 0.7 : 1,
-                cursor: submittingReview ? 'not-allowed' : 'pointer',
-              }}
-              onMouseEnter={(e) => {
-                if (!submittingReview) {
-                  e.currentTarget.style.background = styles.submitButtonHover.background;
-                  e.currentTarget.style.transform = styles.submitButtonHover.transform;
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!submittingReview) {
-                  e.currentTarget.style.background = styles.submitButton.background;
-                  e.currentTarget.style.transform = 'none';
-                }
               }}
               disabled={submittingReview}
             >
               {submittingReview ? 'Submitting...' : 'Submit Review'}
             </button>
           </form>
-        ) : isAuthenticated ? (
-          <div style={styles.reviewLoginMessage}>You have already reviewed this movie</div>
-        ) : (
-          <div style={styles.reviewLoginMessage}>Login to write a review</div>
+        )}
+        
+        {isAuthenticated && hasComment && (
+          <div style={{ marginBottom: '30px', padding: '15px', border: '2px solid #000', background: '#f9f9f9', fontWeight: '700', textAlign: 'center' }}>
+            ✓ You have already shared your review for this movie
+          </div>
         )}
 
         {reviews.length === 0 ? (
@@ -217,9 +297,12 @@ function MovieDetailPage() {
               >
                 <div style={styles.reviewHeader}>
                   <span style={styles.reviewUsername}>{review.user?.username || 'User'}</span>
-                  <span style={styles.reviewDate}>
-                    {new Date(review.createdAt).toLocaleDateString()}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontWeight: 'bold' }}>⭐ {review.rating}</span>
+                    <span style={styles.reviewDate}>
+                      {new Date(review.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
                 <p style={styles.reviewComment}>{review.comment}</p>
               </div>

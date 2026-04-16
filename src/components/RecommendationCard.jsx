@@ -29,11 +29,11 @@ function RecommendationCard({ movie }) {
     if (breakdown.language > 0.9) reasons.push('same language');
     
     if (breakdown.director > 0.9) reasons.push('same director');
-    else if (breakdown.director > 0.2) reasons.push('similar director');
+    else if (breakdown.director > 0.1) reasons.push('similar director');
     
     if (breakdown.year > 0.7) reasons.push('from the same era');
     if (breakdown.rating > 0.7) reasons.push('similar rating');
-    if (breakdown.cast > 0.3) reasons.push('shared cast');
+    if (breakdown.cast > 0.1) reasons.push('shared cast');
     if (breakdown.description > 0.3) reasons.push('similar story');
     
     if (reasons.length === 0) return 'Similar characteristics';

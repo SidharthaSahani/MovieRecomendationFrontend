@@ -7,17 +7,37 @@ import MovieCard from '../components/MovieCard';
 import FilterSection from '../components/FilterSection';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
+import { useAuth } from '../context/AuthContext';
+import RecommendationCard from '../components/RecommendationCard';
 
 function HomePage() {
+  const { isAuthenticated } = useAuth();
   const [movies, setMovies] = useState([]);
+  const [userRecommendations, setUserRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recLoading, setRecLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [sortBy, setSortBy] = useState('latest');
 
   useEffect(() => {
     fetchMovies();
-  }, [selectedGenre, sortBy]);
+    if (isAuthenticated) {
+      fetchUserRecommendations();
+    }
+  }, [selectedGenre, sortBy, isAuthenticated]);
+
+  const fetchUserRecommendations = async () => {
+    try {
+      setRecLoading(true);
+      const response = await axios.get(`${API_URL}/recommendations/user/collaborative`);
+      setUserRecommendations(response.data.recommendations || []);
+    } catch (error) {
+      console.error('Failed to fetch user recommendations:', error);
+    } finally {
+      setRecLoading(false);
+    }
+  };
 
   const fetchMovies = async () => {
     try {
@@ -49,6 +69,21 @@ function HomePage() {
         <p style={styles.heroSubtitle}>
         </p>
       </div>
+
+      {isAuthenticated && userRecommendations.length > 0 && (
+        <div style={{ ...styles.recommendSection, padding: '0 0 40px 0' }}>
+          <h2 style={styles.recommendTitle}>Picked For You</h2>
+          <p style={{ color: '#666', marginBottom: '20px', fontSize: '14px', textTransform: 'uppercase', fontWeight: '700' }}>
+            Based on what similar users liked
+          </p>
+          <div style={styles.moviesGrid}>
+            {userRecommendations.map(rec => (
+              <RecommendationCard key={rec._id} movie={rec} />
+            ))}
+          </div>
+          <hr style={{ margin: '40px 0', border: '0', borderTop: '1px solid #eee' }} />
+        </div>
+      )}
 
       <FilterSection
         search={search}
